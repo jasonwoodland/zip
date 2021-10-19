@@ -11,6 +11,7 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
+	"unicode/utf8"
 )
 
 // TODO(adg): support zip file comments
@@ -192,6 +193,27 @@ func (w *Writer) Create(name string) (io.Writer, error) {
 	return w.CreateHeader(header)
 }
 
+// detectUTF8 reports whether s is a valid UTF-8 string, and whether the string
+// must be considered UTF-8 encoding (i.e., not compatible with CP-437, ASCII,
+// or any other common encoding).
+func detectUTF8(s string) (valid, require bool) {
+	for _, r := range s {
+		// Officially, ZIP uses CP-437, but many readers use the system's
+		// local character encoding. Most encoding are compatible with a large
+		// subset of CP-437, which itself is ASCII-like.
+		//
+		// Forbid 0x7e and 0x5c since EUC-KR and Shift-JIS replace those
+		// characters with localized currency and overline characters.
+		if r < 0x20 || r > 0x7d || r == 0x5c {
+			if !utf8.ValidRune(r) || r == utf8.RuneError {
+				return false, false
+			}
+			require = true
+		}
+	}
+	return true, require
+}
+
 // CreateHeader adds a file to the zip file using the provided FileHeader
 // for the file metadata.
 // It returns a Writer to which the file contents should be written.
@@ -208,6 +230,15 @@ func (w *Writer) CreateHeader(fh *FileHeader) (io.Writer, error) {
 	if len(w.dir) > 0 && w.dir[len(w.dir)-1].FileHeader == fh {
 		// See https://golang.org/issue/11144 confusion.
 		return nil, errors.New("archive/zip: invalid duplicate FileHeader")
+	}
+
+	utf8Valid1, utf8Require1 := detectUTF8(fh.Name)
+	utf8Valid2, utf8Require2 := detectUTF8(fh.Comment)
+	switch {
+	case fh.NonUTF8:
+		fh.Flags &^= 0x800
+	case (utf8Require1 || utf8Require2) && (utf8Valid1 && utf8Valid2):
+		fh.Flags |= 0x800
 	}
 
 	fh.Flags |= 0x8 // we will write a data descriptor

@@ -93,6 +93,17 @@ type FileHeader struct {
 	ExternalAttrs      uint32 // Meaning depends on CreatorVersion
 	Comment            string
 
+	// NonUTF8 indicates that Name and Comment are not encoded in UTF-8.
+	//
+	// By specification, the only other encoding permitted should be CP-437,
+	// but historically many ZIP readers interpret Name and Comment as whatever
+	// the system's local character encoding happens to be.
+	//
+	// This flag should only be set if the user intends to encode a non-portable
+	// ZIP file for a specific localized region. Otherwise, the Writer
+	// automatically sets the ZIP format's UTF-8 flag for valid UTF-8 strings.
+	NonUTF8 bool
+
 	// DeferAuth being set to true will delay hmac auth/integrity
 	// checks when decrypting a file meaning the reader will be
 	// getting unauthenticated plaintext. It is recommended to leave
